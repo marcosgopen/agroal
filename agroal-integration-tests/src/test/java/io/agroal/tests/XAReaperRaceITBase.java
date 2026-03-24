@@ -95,57 +95,74 @@ abstract class XAReaperRaceITBase {
         }
     }
 
-   
-    
-        @Test
-        @BMScript("reaper")
-        public void testInterleave() throws Exception {
-    
-            TransactionManager txManager = com.arjuna.ats.jta.TransactionManager.transactionManager();
+    @Test
+    @BMScript("reaper")
+    public void testInterleave() throws Exception {
 
-            try ( AgroalDataSource dataSource = createXADataSource() ) {
-                verifyXASupported( dataSource );
-    
-    
-    
-    
-                txManager.begin();
-                Transaction t = txManager.getTransaction();
-                Connection connection = dataSource.getConnection();
-    
-                System.out.println("Attempting to insert");
-                PreparedStatement preparedStatement = connection.prepareStatement("INSERT INTO jta_test (some_string) VALUES ('test')");;
-    
-    
-                Thread reaper = new Thread(() -> {
-                    try {
-                        t.rollback();
-                    } catch (SystemException e) {
-                        fail("Could not rollback from 'reaper'");
-                    }
-                });
-                reaper.start();
-    
+        TransactionManager txManager = com.arjuna.ats.jta.TransactionManager.transactionManager();
+
+        try ( AgroalDataSource dataSource = createXADataSource() ) {
+            verifyXASupported( dataSource );
+
+            // Create table using plain Statement (not PreparedStatement)
+            // so the Byteman rule on PreparedStatementWrapper.execute() does not fire
+            try ( Connection setup = dataSource.getConnection() ) {
+                setup.createStatement().execute( createTableDDL() );
+                setup.createStatement().execute( truncateTableSQL() );
+            }
+
+            // Long timeout so the real TransactionReaper does not interfere
+            txManager.setTransactionTimeout( 30 );
+            txManager.begin();
+            Transaction t = txManager.getTransaction();
+            Connection connection = dataSource.getConnection();
+
+            // Prepare INSERT but do not execute yet
+            PreparedStatement ps = connection.prepareStatement(
+                    "INSERT INTO xa_reaper_test (id, val) VALUES (1, 'interleave-test')" );
+
+            // Simulate the reaper: t.rollback() triggers end(TMFAIL) then rollback()
+            // on the XA resource.  Byteman pauses the reaper at
+            // BaseXAResource.rollback() AT ENTRY, creating a window where
+            // end(TMFAIL) has completed but rollback has not yet executed.
+            Thread reaper = new Thread( () -> {
                 try {
-                    // TODO this is the thing we want to do after the verification in prepareStatement
-                    preparedStatement.execute();
-                } catch (SQLException e) {
-                    // This is expected
-                    return;
+                    t.rollback();
+                } catch ( SystemException e ) {
+                    logger.warning( "Reaper rollback exception: " + e.getMessage() );
                 }
-                fail("The end should have failed not have been allowed to happen");
-                t.commit();
-    
-                try (Connection connection2 = dataSource.getConnection()) {
-                    PreparedStatement preparedStatement1 = connection2.prepareStatement("select * from jta_test");
-                    ResultSet resultSet = preparedStatement1.executeQuery();
-                    while (resultSet.next()) {
-                        System.out.println(resultSet.getString(1));
-                        fail("The commit should have failed not have been allowed to happen");
-                    }
+            }, "test-reaper" );
+            reaper.start();
+
+            // Byteman rendezvous: the app thread waits at execute() AT ENTRY
+            // until the reaper reaches rollback() AT ENTRY (after end(TMFAIL)).
+            //
+            try {
+                ps.execute();
+                fail( "INSERT must be rejected after end(TMFAIL) — connection should be poisoned" );
+            } catch ( SQLException e ) {
+                logger.info( "INSERT correctly rejected: " + e.getMessage() );
+            }
+
+            reaper.join( 10_000 );
+
+            // The reaper thread rolled back the TX, but it is still associated
+            // with the main thread.  Suspend it so getConnection() does not
+            // throw "Failing fast as the transaction has rolled back".
+            try { txManager.suspend(); } catch ( SystemException ignore ) { }
+
+            // Verify no data leaked to the database
+            try ( Connection verify = dataSource.getConnection() ) {
+                ResultSet rs = verify.createStatement()
+                        .executeQuery( "SELECT COUNT(*) FROM xa_reaper_test" );
+                rs.next();
+                int count = rs.getInt( 1 );
+                if ( count != 0 ) {
+                    fail( "Data leak: xa_reaper_test has " + count + " rows but should have 0" );
                 }
             }
         }
+    }
     
     
     

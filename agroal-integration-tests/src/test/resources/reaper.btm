@@ -1,32 +1,43 @@
-RULE XATests initialize
-CLASS io.agroal.test.basic.XATests
-METHOD setupTable
-AT EXIT
+RULE Enable interleave sync just before reaper thread starts
+CLASS io.agroal.tests.XAReaperRaceITBase
+METHOD testInterleave
+AT INVOKE start
 BIND NOTHING
 IF TRUE
-DO debug("creating rendezvous"),
-   createRendezvous("reaper1", 2, true)
+DO debug("enabling interleave sync flag"),
+   flag("interleave-active")
 ENDRULE
 
-
-RULE Allow execute to sync with XAR
+RULE App thread waits at execute entry for reaper to reach rollback
 CLASS io.agroal.pool.wrapper.PreparedStatementWrapper
-METHOD execute
-AFTER CALL verifyEnlistment
+METHOD execute()
+AT ENTRY
 BIND NOTHING
-IF isRendezvous("reaper1", 2)
-DO debug("prepared statement waiting"),
-   rendezvous("reaper1"),
-   debug("prepared statement released")
+IF flagged("interleave-active")
+DO debug("app thread: waiting for reaper to complete end(TMFAIL) and reach rollback entry"),
+   waitFor("reaper-at-rollback", 30000),
+   debug("app thread: reaper is held at rollback entry, proceeding with execute()")
 ENDRULE
 
-RULE Allow XAR to sync with execute
+RULE Reaper signals app and holds at rollback entry
 CLASS io.agroal.narayana.BaseXAResource
 METHOD rollback
-AFTER CALL rollback
+AT ENTRY
 BIND NOTHING
-IF TRUE
-DO debug("rollback waiting"),
-   rendezvous("reaper1"),
-   debug("rollback released")
+IF flagged("interleave-active")
+DO debug("reaper: end(TMFAIL) done, signaling app thread and waiting"),
+   signalWake("reaper-at-rollback", false),
+   waitFor("app-execute-done", 30000),
+   debug("reaper: app done, proceeding with rollback()")
+ENDRULE
+
+RULE Release reaper before join
+CLASS io.agroal.tests.XAReaperRaceITBase
+METHOD testInterleave
+AT INVOKE join
+BIND NOTHING
+IF flagged("interleave-active")
+DO debug("app thread: execute attempt finished, releasing reaper"),
+   clear("interleave-active"),
+   signalWake("app-execute-done", false)
 ENDRULE
