@@ -1,0 +1,32 @@
+RULE XATests initialize
+CLASS io.agroal.test.basic.XATests
+METHOD setupTable
+AT EXIT
+BIND NOTHING
+IF TRUE
+DO debug("creating rendezvous"),
+   createRendezvous("reaper1", 2, true)
+ENDRULE
+
+
+RULE Allow execute to sync with XAR
+CLASS io.agroal.pool.wrapper.PreparedStatementWrapper
+METHOD execute
+AFTER CALL verifyEnlistment
+BIND NOTHING
+IF isRendezvous("reaper1", 2)
+DO debug("prepared statement waiting"),
+   rendezvous("reaper1"),
+   debug("prepared statement released")
+ENDRULE
+
+RULE Allow XAR to sync with execute
+CLASS io.agroal.narayana.BaseXAResource
+METHOD rollback
+AFTER CALL rollback
+BIND NOTHING
+IF TRUE
+DO debug("rollback waiting"),
+   rendezvous("reaper1"),
+   debug("rollback released")
+ENDRULE
