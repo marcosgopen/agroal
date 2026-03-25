@@ -2,6 +2,8 @@ package io.agroal.tests;
 
 import io.agroal.api.AgroalDataSource;
 import io.agroal.api.configuration.AgroalConnectionPoolConfiguration.ConnectionValidator;
+
+import org.jboss.byteman.contrib.bmunit.BMUnitConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -17,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThatNoException;
 
 @Tag("testcontainers")
 @Testcontainers
+@BMUnitConfig(debug = true)
 public class PostgreSQLTest {
 
     @Container

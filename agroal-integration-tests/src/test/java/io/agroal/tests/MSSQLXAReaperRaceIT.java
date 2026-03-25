@@ -2,6 +2,7 @@ package io.agroal.tests;
 
 import java.util.logging.Logger;
 
+import org.jboss.byteman.contrib.bmunit.BMUnitConfig;
 import org.junit.jupiter.api.Tag;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -16,6 +17,7 @@ import org.testcontainers.mssqlserver.MSSQLServerContainer;
  */
 @Tag( "testcontainers" )
 @Testcontainers
+@BMUnitConfig(debug = true)
 class MSSQLXAReaperRaceIT extends XAReaperRaceITBase {
 
     private static final Logger logger = Logger.getLogger( MSSQLXAReaperRaceIT.class.getName() );

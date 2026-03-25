@@ -1,5 +1,6 @@
 package io.agroal.tests;
 
+import org.jboss.byteman.contrib.bmunit.BMUnitConfig;
 import org.junit.jupiter.api.Tag;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -21,6 +22,7 @@ import org.testcontainers.utility.MountableFile;
  */
 @Tag( "testcontainers" )
 @Testcontainers
+@BMUnitConfig(debug = true)
 class OracleXAReaperRaceIT extends XAReaperRaceITBase {
 
     @Container
