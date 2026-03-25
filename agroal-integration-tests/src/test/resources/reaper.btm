@@ -1,7 +1,7 @@
-RULE Enable interleave sync just before reaper thread starts
+RULE Enable interleave sync after prepareStatement
 CLASS io.agroal.tests.XAReaperRaceITBase
 METHOD testInterleave
-AT INVOKE start
+AFTER INVOKE prepareStatement
 BIND NOTHING
 IF TRUE
 DO debug("enabling interleave sync flag"),
@@ -25,16 +25,16 @@ METHOD rollback
 AT ENTRY
 BIND NOTHING
 IF flagged("interleave-active")
-DO debug("reaper: end(TMFAIL) done, signaling app thread and waiting"),
+DO debug("reaper: end(TMFAIL) done, signaling app thread and holding"),
    signalWake("reaper-at-rollback", false),
    waitFor("app-execute-done", 30000),
    debug("reaper: app done, proceeding with rollback()")
 ENDRULE
 
-RULE Release reaper before join
+RULE Release reaper before suspend
 CLASS io.agroal.tests.XAReaperRaceITBase
 METHOD testInterleave
-AT INVOKE join
+AT INVOKE suspend
 BIND NOTHING
 IF flagged("interleave-active")
 DO debug("app thread: execute attempt finished, releasing reaper"),

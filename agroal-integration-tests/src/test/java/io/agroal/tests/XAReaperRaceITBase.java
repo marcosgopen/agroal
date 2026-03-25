@@ -22,7 +22,6 @@ import io.agroal.api.security.NamePrincipal;
 import io.agroal.api.security.SimplePassword;
 import io.agroal.narayana.NarayanaTransactionIntegration;
 import jakarta.transaction.SystemException;
-import jakarta.transaction.Transaction;
 import jakarta.transaction.TransactionManager;
 import jakarta.transaction.TransactionSynchronizationRegistry;
 
@@ -111,47 +110,38 @@ abstract class XAReaperRaceITBase {
                 setup.createStatement().execute( truncateTableSQL() );
             }
 
-            // Long timeout so the real TransactionReaper does not interfere
-            txManager.setTransactionTimeout( 30 );
+            // Short timeout — the real TransactionReaper will fire after this
+            txManager.setTransactionTimeout( 2 );
             txManager.begin();
-            Transaction t = txManager.getTransaction();
             Connection connection = dataSource.getConnection();
 
-            // Prepare INSERT but do not execute yet
+            // Prepare INSERT but do not execute yet.
+            // Byteman activates interleave sync AFTER this call returns.
             PreparedStatement ps = connection.prepareStatement(
                     "INSERT INTO xa_reaper_test (id, val) VALUES (1, 'interleave-test')" );
 
-            // Simulate the reaper: t.rollback() triggers end(TMFAIL) then rollback()
-            // on the XA resource.  Byteman pauses the reaper at
-            // BaseXAResource.rollback() AT ENTRY, creating a window where
-            // end(TMFAIL) has completed but rollback has not yet executed.
-            Thread reaper = new Thread( () -> {
-                try {
-                    t.rollback();
-                } catch ( SystemException e ) {
-                    logger.warning( "Reaper rollback exception: " + e.getMessage() );
-                }
-            }, "test-reaper" );
-            reaper.start();
-
-            // Byteman rendezvous: the app thread waits at execute() AT ENTRY
-            // until the reaper reaches rollback() AT ENTRY (after end(TMFAIL)).
+            // The app thread calls execute() — Byteman holds it at AT ENTRY
+            // until the TransactionReaper fires (~2s), calls end(TMFAIL), and
+            // reaches rollback() AT ENTRY.  The reaper is then held at
+            // rollback() while the app thread attempts the INSERT.
             //
+            // With the fix:    execute() throws — connection poisoned by end(TMFAIL)
+            // Without the fix: execute() succeeds — silent data leak
             try {
                 ps.execute();
                 fail( "INSERT must be rejected after end(TMFAIL) — connection should be poisoned" );
             } catch ( SQLException e ) {
                 logger.info( "INSERT correctly rejected: " + e.getMessage() );
+                e.printStackTrace();
             }
 
-            reaper.join( 10_000 );
-
-            // The reaper thread rolled back the TX, but it is still associated
-            // with the main thread.  Suspend it so getConnection() does not
-            // throw "Failing fast as the transaction has rolled back".
+            // Suspend the rolled-back TX from the main thread.
+            // Byteman releases the reaper here (AT INVOKE suspend).
             try { txManager.suspend(); } catch ( SystemException ignore ) { }
 
-            // Verify no data leaked to the database
+            // Verify no data leaked to the database.
+            // getConnection() blocks until the reaper finishes rollback and the
+            // pool connection is returned (pool maxSize=1).
             try ( Connection verify = dataSource.getConnection() ) {
                 ResultSet rs = verify.createStatement()
                         .executeQuery( "SELECT COUNT(*) FROM xa_reaper_test" );

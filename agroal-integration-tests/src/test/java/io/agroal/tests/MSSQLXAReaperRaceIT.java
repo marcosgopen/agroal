@@ -1,24 +1,11 @@
 package io.agroal.tests;
 
-import io.agroal.api.AgroalDataSource;
-import org.junit.jupiter.api.DisplayName;
+import java.util.logging.Logger;
+
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mssqlserver.MSSQLServerContainer;
-
-import jakarta.transaction.TransactionManager;
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
-import java.util.logging.Logger;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.Assertions.fail;
 
 /**
  * XA reaper race integration test against MSSQL using Testcontainers.
