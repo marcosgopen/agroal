@@ -8,6 +8,16 @@ DO debug("enabling interleave sync flag"),
    flag("interleave-active")
 ENDRULE
 
+RULE Mark end(TMFAIL) reached
+CLASS io.agroal.narayana.BaseXAResource
+METHOD end
+AT EXIT
+BIND flags = $2
+IF flagged("interleave-active") AND (flags & javax.transaction.xa.XAResource.TMFAIL) != 0
+DO debug("reaper: end(TMFAIL) completed, marking endTmFailReached"),
+   io.agroal.tests.XAReaperRaceITBase.markEndTmFailReached()
+ENDRULE
+
 RULE App thread waits at execute entry for reaper to reach rollback
 CLASS io.agroal.pool.wrapper.PreparedStatementWrapper
 METHOD execute()
