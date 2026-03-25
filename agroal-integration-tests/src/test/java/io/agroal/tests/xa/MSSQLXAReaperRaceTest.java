@@ -1,9 +1,10 @@
-package io.agroal.tests;
+package io.agroal.tests.xa;
 
 import java.util.logging.Logger;
 
 import org.jboss.byteman.contrib.bmunit.BMUnitConfig;
 import org.junit.jupiter.api.Tag;
+import org.testcontainers.containers.JdbcDatabaseContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mssqlserver.MSSQLServerContainer;
@@ -18,7 +19,7 @@ import org.testcontainers.mssqlserver.MSSQLServerContainer;
 @Tag( "testcontainers" )
 @Testcontainers
 @BMUnitConfig(debug = true)
-class MSSQLXAReaperRaceIT extends XAReaperRaceITBase {
+class MSSQLXAReaperRaceIT extends XAReaperRaceTestBase {
 
     private static final Logger logger = Logger.getLogger( MSSQLXAReaperRaceIT.class.getName() );
 
@@ -33,18 +34,8 @@ class MSSQLXAReaperRaceIT extends XAReaperRaceITBase {
     }
 
     @Override
-    String jdbcUrl() {
-        return mssql.getJdbcUrl();
-    }
-
-    @Override
-    String username() {
-        return mssql.getUsername();
-    }
-
-    @Override
-    String password() {
-        return mssql.getPassword();
+    JdbcDatabaseContainer<MSSQLServerContainer> container() {
+        return mssql;
     }
 
     @Override

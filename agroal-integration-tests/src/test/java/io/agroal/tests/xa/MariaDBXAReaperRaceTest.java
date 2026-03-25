@@ -1,7 +1,8 @@
-package io.agroal.tests;
+package io.agroal.tests.xa;
 
 import org.jboss.byteman.contrib.bmunit.BMUnitConfig;
 import org.junit.jupiter.api.Tag;
+import org.testcontainers.containers.JdbcDatabaseContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mariadb.MariaDBContainer;
@@ -13,7 +14,7 @@ import org.testcontainers.mariadb.MariaDBContainer;
 @Tag( "testcontainers" )
 @Testcontainers
 @BMUnitConfig(debug = true)
-class MariaDBXAReaperRaceIT extends XAReaperRaceITBase {
+class MariaDBXAReaperRaceIT extends XAReaperRaceTestBase {
 
     @Container
     static MariaDBContainer mariadb = new MariaDBContainer( "mariadb:11" );
@@ -24,20 +25,9 @@ class MariaDBXAReaperRaceIT extends XAReaperRaceITBase {
     }
 
     @Override
-    String jdbcUrl() {
-        return mariadb.getJdbcUrl();
+    JdbcDatabaseContainer<MariaDBContainer> container() {
+        return mariadb;
     }
-
-    @Override
-    String username() {
-        return mariadb.getUsername();
-    }
-
-    @Override
-    String password() {
-        return mariadb.getPassword();
-    }
-
     @Override
     String slowSQL() {
         return "SELECT SLEEP(4)";

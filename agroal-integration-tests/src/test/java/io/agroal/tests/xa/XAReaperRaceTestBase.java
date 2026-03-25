@@ -1,4 +1,4 @@
-package io.agroal.tests;
+package io.agroal.tests.xa;
 
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -15,35 +15,31 @@ import org.jboss.byteman.contrib.bmunit.BMScript;
 import org.jboss.byteman.contrib.bmunit.BMUnitConfig;
 import org.jboss.byteman.contrib.bmunit.WithByteman;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.JdbcDatabaseContainer;
 
 import io.agroal.api.AgroalDataSource;
 import io.agroal.api.AgroalDataSourceListener;
-import io.agroal.api.configuration.supplier.AgroalDataSourceConfigurationSupplier;
-import io.agroal.api.security.NamePrincipal;
-import io.agroal.api.security.SimplePassword;
-import io.agroal.narayana.NarayanaTransactionIntegration;
+import io.agroal.tests.Datasources;
 import jakarta.transaction.SystemException;
 import jakarta.transaction.TransactionManager;
-import jakarta.transaction.TransactionSynchronizationRegistry;
 
 
 @WithByteman
 @BMUnitConfig(debug = true)
-abstract class XAReaperRaceITBase {
+abstract class XAReaperRaceTestBase {
 
-    private static final Logger logger = Logger.getLogger( XAReaperRaceITBase.class.getName() );
+    private static final Logger logger = Logger.getLogger( XAReaperRaceTestBase.class.getName() );
 
-    // Set by Byteman rule when end(TMFAIL) completes on the reaper thread
-    static volatile boolean endTmFailReached;
+    // Set by Byteman rule when rollback() completes successfully on the reaper thread
+    static volatile boolean rollbackSucceeded;
 
-    public static void markEndTmFailReached() {
-        endTmFailReached = true;
+    public static void markRollbackSucceeded() {
+        rollbackSucceeded = true;
     }
 
     abstract String xaDataSourceClassName();
-    abstract String jdbcUrl();
-    abstract String username();
-    abstract String password();
+    abstract JdbcDatabaseContainer container();
+
     abstract String slowSQL();
 
     /**
@@ -67,27 +63,6 @@ abstract class XAReaperRaceITBase {
         return "DELETE FROM xa_reaper_test";
     }
 
-    protected AgroalDataSource createXADataSource() throws SQLException {
-        TransactionManager txManager = com.arjuna.ats.jta.TransactionManager.transactionManager();
-        TransactionSynchronizationRegistry txSyncRegistry =
-                new com.arjuna.ats.internal.jta.transaction.arjunacore.TransactionSynchronizationRegistryImple();
-
-        return AgroalDataSource.from( new AgroalDataSourceConfigurationSupplier()
-                .connectionPoolConfiguration( cp -> cp
-                        .maxSize( 1 )
-                        .transactionIntegration( new NarayanaTransactionIntegration( txManager, txSyncRegistry ) )
-                        .connectionFactoryConfiguration( cf -> cf
-                                .connectionProviderClassName( xaDataSourceClassName() )
-                                .jdbcUrl( jdbcUrl() )
-                                .principal( new NamePrincipal( username() ) )
-                                .credential( new SimplePassword( password() ) )
-                        )
-                ), new LoggingListener() );
-    }
-
-
-
-
 
     protected void verifyXASupported( AgroalDataSource dataSource ) {
         TransactionManager txManager = com.arjuna.ats.jta.TransactionManager.transactionManager();
@@ -108,7 +83,7 @@ abstract class XAReaperRaceITBase {
 
         TransactionManager txManager = com.arjuna.ats.jta.TransactionManager.transactionManager();
 
-        try ( AgroalDataSource dataSource = createXADataSource() ) {
+        try ( AgroalDataSource dataSource = Datasources.createXADataSource(container(), xaDataSourceClassName()) ) {
             verifyXASupported( dataSource );
 
             // Create table using plain Statement (not PreparedStatement)
@@ -118,7 +93,7 @@ abstract class XAReaperRaceITBase {
                 setup.createStatement().execute( truncateTableSQL() );
             }
 
-            endTmFailReached = false;
+            rollbackSucceeded = false;
 
             // Short timeout — the real TransactionReaper will fire after this
             txManager.setTransactionTimeout( 2 );
@@ -136,10 +111,8 @@ abstract class XAReaperRaceITBase {
             // rollback() while the app thread attempts the INSERT.
 
             try {
-            	// Verify end(TMFAIL) has already been called before the app thread executes.
-            	// The Byteman script guarantees this ordering, but we assert it explicitly.
-            	assertTrue( endTmFailReached, "end(TMFAIL) must have completed before execute() proceeds" );
-            	// By the time the INSERT runs, the connection has already been disassociated from the XA branch by a fully completed end(TMFAIL).
+            	// Byteman holds execute() AT ENTRY until the reaper completes end(TMFAIL) and reaches rollback().
+            	// By the time the INSERT actually runs, the connection has already been disassociated from the XA branch.
             	// The connection is no longer transactionally protected.
             	// The INSERT goes through in auto-commit mode and is immediately committed to the database.
                 ps.execute();
@@ -153,10 +126,13 @@ abstract class XAReaperRaceITBase {
             // Byteman releases the reaper here (AT INVOKE suspend).
             try { txManager.suspend(); } catch ( SystemException ignore ) { }
 
-            // Verify no data leaked to the database.
-            // getConnection() blocks until the reaper finishes rollback and the
-            // pool connection is returned (pool maxSize=1).
+            // getConnection() blocks until the reaper finishes (rollback + connection return)
+            // because pool maxSize=1. By the time it returns, rollback has completed or failed.
             try ( Connection verify = dataSource.getConnection() ) {
+                // Verify rollback completed successfully before checking for data leak.
+                // If rollback failed, rows persisting is expected — not a data leak.
+                assertTrue( rollbackSucceeded, "Reaper's rollback() must have completed successfully" );
+
                 ResultSet rs = verify.createStatement()
                         .executeQuery( "SELECT COUNT(*) FROM xa_reaper_test" );
                 rs.next();
@@ -166,16 +142,5 @@ abstract class XAReaperRaceITBase {
                 }
             }
         }
-    }
-    
-    
-    
-
-
-
-
-    private static class LoggingListener implements AgroalDataSourceListener {
-        @Override public void onWarning(String message) { logger.warning( "Agroal: " + message ); }
-        @Override public void onWarning(Throwable throwable) { logger.warning( "Agroal: " + throwable.getMessage() ); }
     }
 }

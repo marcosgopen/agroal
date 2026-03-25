@@ -1,7 +1,8 @@
-package io.agroal.tests;
+package io.agroal.tests.xa;
 
 import org.jboss.byteman.contrib.bmunit.BMUnitConfig;
 import org.junit.jupiter.api.Tag;
+import org.testcontainers.containers.JdbcDatabaseContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mysql.MySQLContainer;
@@ -13,7 +14,7 @@ import org.testcontainers.mysql.MySQLContainer;
 @Tag( "testcontainers" )
 @Testcontainers
 @BMUnitConfig(debug = true)
-class MySQLXAReaperRaceIT extends XAReaperRaceITBase {
+class MySQLXAReaperRaceIT extends XAReaperRaceTestBase {
 
     @Container
     static MySQLContainer mysql = new MySQLContainer( "mysql:8.0" );
@@ -24,18 +25,8 @@ class MySQLXAReaperRaceIT extends XAReaperRaceITBase {
     }
 
     @Override
-    String jdbcUrl() {
-        return mysql.getJdbcUrl();
-    }
-
-    @Override
-    String username() {
-        return mysql.getUsername();
-    }
-
-    @Override
-    String password() {
-        return mysql.getPassword();
+    JdbcDatabaseContainer<MySQLContainer>  container() {
+        return mysql;
     }
 
     @Override

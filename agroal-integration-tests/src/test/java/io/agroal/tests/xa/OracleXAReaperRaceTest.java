@@ -1,7 +1,8 @@
-package io.agroal.tests;
+package io.agroal.tests.xa;
 
 import org.jboss.byteman.contrib.bmunit.BMUnitConfig;
 import org.junit.jupiter.api.Tag;
+import org.testcontainers.containers.JdbcDatabaseContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.oracle.OracleContainer;
@@ -23,7 +24,7 @@ import org.testcontainers.utility.MountableFile;
 @Tag( "testcontainers" )
 @Testcontainers
 @BMUnitConfig(debug = true)
-class OracleXAReaperRaceIT extends XAReaperRaceITBase {
+class OracleXAReaperRaceIT extends XAReaperRaceTestBase {
 
     @Container
     static OracleContainer oracle = new OracleContainer( "gvenzl/oracle-free:slim-faststart" )
@@ -39,18 +40,8 @@ class OracleXAReaperRaceIT extends XAReaperRaceITBase {
     }
 
     @Override
-    String jdbcUrl() {
-        return oracle.getJdbcUrl();
-    }
-
-    @Override
-    String username() {
-        return oracle.getUsername();
-    }
-
-    @Override
-    String password() {
-        return oracle.getPassword();
+    JdbcDatabaseContainer<OracleContainer>  container() {
+        return oracle;
     }
 
     @Override

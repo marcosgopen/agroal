@@ -1,21 +1,11 @@
 RULE Enable interleave sync after prepareStatement
-CLASS io.agroal.tests.XAReaperRaceITBase
+CLASS io.agroal.tests.xa.XAReaperRaceTestBase
 METHOD testInterleave
 AFTER INVOKE prepareStatement
 BIND NOTHING
 IF TRUE
 DO debug("enabling interleave sync flag"),
    flag("interleave-active")
-ENDRULE
-
-RULE Mark end(TMFAIL) reached
-CLASS io.agroal.narayana.BaseXAResource
-METHOD end
-AT EXIT
-BIND flags = $2
-IF flagged("interleave-active") AND (flags & javax.transaction.xa.XAResource.TMFAIL) != 0
-DO debug("reaper: end(TMFAIL) completed, marking endTmFailReached"),
-   io.agroal.tests.XAReaperRaceITBase.markEndTmFailReached()
 ENDRULE
 
 RULE App thread waits at execute entry for reaper to reach rollback
@@ -35,14 +25,26 @@ METHOD rollback
 AT ENTRY
 BIND NOTHING
 IF flagged("interleave-active")
-DO debug("reaper: end(TMFAIL) done, signaling app thread and holding"),
+DO flag("rollback-started"),
+   debug("reaper: end(TMFAIL) done, signaling app thread and holding"),
    signalWake("reaper-at-rollback", false),
    waitFor("app-execute-done", 30000),
    debug("reaper: app done, proceeding with rollback()")
 ENDRULE
 
+RULE Mark rollback succeeded
+CLASS io.agroal.narayana.BaseXAResource
+METHOD rollback
+AT EXIT
+BIND NOTHING
+IF flagged("rollback-started")
+DO clear("rollback-started"),
+   debug("reaper: rollback() completed successfully"),
+   io.agroal.tests.xa.XAReaperRaceTestBase.markRollbackSucceeded()
+ENDRULE
+
 RULE Release reaper before suspend
-CLASS io.agroal.tests.XAReaperRaceITBase
+CLASS io.agroal.tests.xa.XAReaperRaceTestBase
 METHOD testInterleave
 AT INVOKE suspend
 BIND NOTHING

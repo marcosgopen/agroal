@@ -1,7 +1,8 @@
-package io.agroal.tests;
+package io.agroal.tests.xa;
 
 import org.jboss.byteman.contrib.bmunit.BMUnitConfig;
 import org.junit.jupiter.api.Tag;
+import org.testcontainers.containers.JdbcDatabaseContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -13,7 +14,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @Tag( "testcontainers" )
 @Testcontainers
 @BMUnitConfig(debug = true)
-class PostgreSQLXAReaperRaceIT extends XAReaperRaceITBase {
+class PostgreSQLXAReaperRaceIT extends XAReaperRaceTestBase {
 
     @Container
     static PostgreSQLContainer postgres = new PostgreSQLContainer( "postgres:17-alpine" );
@@ -24,18 +25,8 @@ class PostgreSQLXAReaperRaceIT extends XAReaperRaceITBase {
     }
 
     @Override
-    String jdbcUrl() {
-        return postgres.getJdbcUrl();
-    }
-
-    @Override
-    String username() {
-        return postgres.getUsername();
-    }
-
-    @Override
-    String password() {
-        return postgres.getPassword();
+    JdbcDatabaseContainer<PostgreSQLContainer>  container() {
+        return postgres;
     }
 
     @Override
